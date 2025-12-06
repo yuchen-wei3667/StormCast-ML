@@ -5,19 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.13
-  - aioboto3
-  - boto3
-  - cfgrib
   - numpy
-  - netcdf4
-  - scikit-image
-  - scipy
-  - shapely
-  - rasterio
-  - xarray
-  - folium
-  - psutil
+  - matplotlib
   - tensorflow
   - pytorch
-  - pip:
-    - gputil
