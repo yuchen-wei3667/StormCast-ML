@@ -1,4 +1,4 @@
-name: EdgeWARN-dev
+name: StormCast
 channels:
   - anaconda
   - conda-forge
@@ -17,5 +17,7 @@ dependencies:
   - xarray
   - folium
   - psutil
+  - tensorflow
+  - pytorch
   - pip:
     - gputil
