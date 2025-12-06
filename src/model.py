@@ -24,11 +24,25 @@ class StormCellLSTM(nn.Module):
         out = self.fc(out[:, -1, :])
         return out
 
-    def predict_from_json(self, json_input):
+    def load_trained_weights(self, weights_path='trained_storm_lstm.pth'):
+        """Load trained weights from file"""
+        try:
+            self.load_state_dict(torch.load(weights_path))
+            return True
+        except FileNotFoundError:
+            return False
+
+    def predict_from_json(self, json_input, use_trained=True):
         """
         Takes a single storm cell JSON object (dict) and predicts the motion vector.
+        If use_trained=True, will attempt to load trained weights first.
         """
         from src.data_loader import parse_storm_cell_json
+        
+        # Try to load trained weights
+        if use_trained:
+            if self.load_trained_weights():
+                pass  # Weights loaded successfully
         
         # Preprocess input
         input_tensor = parse_storm_cell_json(json_input)

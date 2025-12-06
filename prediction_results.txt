@@ -1,0 +1,64 @@
+Loading data from TrainingData/stormcells_TX_20251123.json...
+
+Found 152 storm cells.
+
+Model initialized.
+
+================================================================================
+
+Storm Cell ID: 35219
+History Length: 16 timesteps
+
+  LSTM Prediction:      vx =    26.90, vy =    22.87
+  Baseline (avg last 4): vx =     9.09, vy =     9.16
+
+  Difference:           Δvx =    17.81, Δvy =    13.71
+  Deviation Magnitude:  22.47
+  Percent Difference:   174.17%
+--------------------------------------------------------------------------------
+
+Storm Cell ID: 35336
+History Length: 43 timesteps
+
+  LSTM Prediction:      vx =    11.24, vy =     5.81
+  Baseline (avg last 4): vx =    13.83, vy =     7.12
+
+  Difference:           Δvx =    -2.59, Δvy =    -1.31
+  Deviation Magnitude:  2.90
+  Percent Difference:   18.66%
+--------------------------------------------------------------------------------
+
+Storm Cell ID: 35425
+History Length: 9 timesteps
+
+  LSTM Prediction:      vx =    10.77, vy =    10.47
+  Baseline (avg last 4): vx =    13.28, vy =    28.01
+
+  Difference:           Δvx =    -2.52, Δvy =   -17.54
+  Deviation Magnitude:  17.72
+  Percent Difference:   57.16%
+--------------------------------------------------------------------------------
+
+Storm Cell ID: 35446
+History Length: 28 timesteps
+
+  LSTM Prediction:      vx =     7.04, vy =     3.14
+  Baseline (avg last 4): vx =    17.65, vy =    22.75
+
+  Difference:           Δvx =   -10.60, Δvy =   -19.61
+  Deviation Magnitude:  22.29
+  Percent Difference:   77.42%
+--------------------------------------------------------------------------------
+
+Storm Cell ID: 35507
+History Length: 43 timesteps
+
+  LSTM Prediction:      vx =     3.57, vy =     0.47
+  Baseline (avg last 4): vx =    15.61, vy =    19.01
+
+  Difference:           Δvx =   -12.04, Δvy =   -18.53
+  Deviation Magnitude:  22.10
+  Percent Difference:   89.85%
+--------------------------------------------------------------------------------
+
+Comparison complete!
