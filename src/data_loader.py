@@ -41,6 +41,9 @@ class StormCellDataset(Dataset):
                 float(point.get('dx', 0)),
                 float(point.get('dy', 0)),
                 float(point.get('dt', 0)),
+                float(point.get('EBShear', 0)),
+                float(point.get('SRW46km', 0)),
+                float(point.get('MeanWind_1-3kmAGL', 0)),
             ]
             sequences.append(feats)
             
@@ -74,10 +77,13 @@ def parse_storm_cell_json(json_data):
             float(point.get('dx', 0)),
             float(point.get('dy', 0)),
             float(point.get('dt', 0)),
+            float(point.get('EBShear', 0)),
+            float(point.get('SRW46km', 0)),
+            float(point.get('MeanWind_1-3kmAGL', 0)),
         ]
         sequences.append(feats)
         
     if not sequences:
-        return torch.empty(0, 3)
+        return torch.empty(0, 6)
         
     return torch.tensor(sequences, dtype=torch.float32).unsqueeze(0) # Add batch dimension

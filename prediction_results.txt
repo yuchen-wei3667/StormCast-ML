@@ -9,56 +9,56 @@ Model initialized.
 Storm Cell ID: 35219
 History Length: 16 timesteps
 
-  LSTM Prediction:      vx =    26.90, vy =    22.87
+  LSTM Prediction:      vx =    23.92, vy =    19.14
   Baseline (avg last 4): vx =     9.09, vy =     9.16
 
-  Difference:           Δvx =    17.81, Δvy =    13.71
-  Deviation Magnitude:  22.47
-  Percent Difference:   174.17%
+  Difference:           Δvx =    14.84, Δvy =     9.98
+  Deviation Magnitude:  17.88
+  Percent Difference:   138.56%
 --------------------------------------------------------------------------------
 
 Storm Cell ID: 35336
 History Length: 43 timesteps
 
-  LSTM Prediction:      vx =    11.24, vy =     5.81
+  LSTM Prediction:      vx =    12.50, vy =     7.49
   Baseline (avg last 4): vx =    13.83, vy =     7.12
 
-  Difference:           Δvx =    -2.59, Δvy =    -1.31
-  Deviation Magnitude:  2.90
-  Percent Difference:   18.66%
+  Difference:           Δvx =    -1.34, Δvy =     0.37
+  Deviation Magnitude:  1.39
+  Percent Difference:   8.91%
 --------------------------------------------------------------------------------
 
 Storm Cell ID: 35425
 History Length: 9 timesteps
 
-  LSTM Prediction:      vx =    10.77, vy =    10.47
+  LSTM Prediction:      vx =    15.76, vy =    12.79
   Baseline (avg last 4): vx =    13.28, vy =    28.01
 
-  Difference:           Δvx =    -2.52, Δvy =   -17.54
-  Deviation Magnitude:  17.72
-  Percent Difference:   57.16%
+  Difference:           Δvx =     2.48, Δvy =   -15.21
+  Deviation Magnitude:  15.41
+  Percent Difference:   49.73%
 --------------------------------------------------------------------------------
 
 Storm Cell ID: 35446
 History Length: 28 timesteps
 
-  LSTM Prediction:      vx =     7.04, vy =     3.14
+  LSTM Prediction:      vx =    10.24, vy =     7.13
   Baseline (avg last 4): vx =    17.65, vy =    22.75
 
-  Difference:           Δvx =   -10.60, Δvy =   -19.61
-  Deviation Magnitude:  22.29
-  Percent Difference:   77.42%
+  Difference:           Δvx =    -7.40, Δvy =   -15.62
+  Deviation Magnitude:  17.29
+  Percent Difference:   60.04%
 --------------------------------------------------------------------------------
 
 Storm Cell ID: 35507
 History Length: 43 timesteps
 
-  LSTM Prediction:      vx =     3.57, vy =     0.47
+  LSTM Prediction:      vx =    10.62, vy =     7.68
   Baseline (avg last 4): vx =    15.61, vy =    19.01
 
-  Difference:           Δvx =   -12.04, Δvy =   -18.53
-  Deviation Magnitude:  22.10
-  Percent Difference:   89.85%
+  Difference:           Δvx =    -4.99, Δvy =   -11.33
+  Deviation Magnitude:  12.38
+  Percent Difference:   50.34%
 --------------------------------------------------------------------------------
 
 Comparison complete!

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class StormCellLSTM(nn.Module):
-    def __init__(self, input_size=3, hidden_size=64, num_layers=2, output_size=2):
+    def __init__(self, input_size=6, hidden_size=64, num_layers=2, output_size=2):
         super(StormCellLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers

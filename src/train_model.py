@@ -47,6 +47,9 @@ def create_training_data(json_files):
                         float(point.get('dx', 0)),
                         float(point.get('dy', 0)),
                         float(point.get('dt', 1)),
+                        float(point.get('EBShear', 0)),
+                        float(point.get('SRW46km', 0)),
+                        float(point.get('MeanWind_1-3kmAGL', 0)),
                     ]
                     sequence.append(feats)
                 
@@ -77,7 +80,7 @@ def pad_sequences(sequences, max_len=None):
     for seq in sequences:
         if len(seq) < max_len:
             # Pad with zeros
-            padding = [[0, 0, 0]] * (max_len - len(seq))
+            padding = [[0, 0, 0, 0, 0, 0]] * (max_len - len(seq))
             padded.append(padding + seq)
         else:
             padded.append(seq[-max_len:])  # Take last max_len
@@ -112,7 +115,7 @@ def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_
     print(f"Validation samples: {len(X_val)}")
     
     # Create model
-    model = StormCellLSTM(input_size=3, hidden_size=64, num_layers=2, output_size=2)
+    model = StormCellLSTM(input_size=6, hidden_size=64, num_layers=2, output_size=2)
     
     # Loss and optimizer
     criterion = nn.MSELoss()
