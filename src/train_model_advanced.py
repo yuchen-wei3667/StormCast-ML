@@ -135,22 +135,32 @@ def create_enhanced_training_data(json_files, augment_data=True, noise_factor=0.
 def normalize_features(sequences, stats, is_target=False):
     """Normalize features using computed statistics"""
     normalized = []
-    if is_target:
-        mean, std = stats['velocity_mean'], stats['velocity_std']
-    else:
-        mean, std = stats['mean'], stats['std']
     
-    for seq in sequences:
-        normalized_seq = []
-        for feats in seq:
-            normalized_feats = []
-            for i, feat in enumerate(feats):
+    if is_target:
+        # Handle target normalization (2D vectors: [vx, vy])
+        mean, std = stats['velocity_mean'], stats['velocity_std']
+        for target in sequences:
+            normalized_target = []
+            for i, val in enumerate(target):
                 if std[i] > 1e-6:
-                    normalized_feats.append((feat - mean[i]) / std[i])
+                    normalized_target.append((val - mean[i]) / std[i])
                 else:
-                    normalized_feats.append(feat - mean[i])
-            normalized_seq.append(normalized_feats)
-        normalized.append(normalized_seq)
+                    normalized_target.append(val - mean[i])
+            normalized.append(normalized_target)
+    else:
+        # Handle feature sequence normalization (sequences of 11D vectors)
+        mean, std = stats['mean'], stats['std']
+        for seq in sequences:
+            normalized_seq = []
+            for feats in seq:
+                normalized_feats = []
+                for i, feat in enumerate(feats):
+                    if std[i] > 1e-6:
+                        normalized_feats.append((feat - mean[i]) / std[i])
+                    else:
+                        normalized_feats.append(feat - mean[i])
+                normalized_seq.append(normalized_feats)
+            normalized.append(normalized_seq)
     
     return normalized
 
