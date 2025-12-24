@@ -10,7 +10,7 @@ from src.model import StormCellLSTM
 
 def main():
     # Load sample data
-    json_file = 'TrainingData/stormcells_TX_20251123.json'
+    json_file = 'TrainingData/stormcells_Central_20250315.json'
     print(f"Loading data from {json_file}...")
     
     try:

@@ -172,9 +172,12 @@ def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_
     return model
 
 def main():
+    # Use all available training data files
     json_files = [
-        'TrainingData/stormcells_TX_20251123.json',
-        'TrainingData/stormcells_SE_20251125.json'
+        'TrainingData/stormcells_Central_20250315.json',
+        'TrainingData/stormcells_Midwest_20240506.json',
+        'TrainingData/stormcells_SE_20251125.json',
+        'TrainingData/stormcells_TX_20251123.json'
     ]
     
     print("=" * 80)
