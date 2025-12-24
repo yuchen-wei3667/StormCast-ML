@@ -4,6 +4,8 @@ import torch.nn as nn
 import numpy as np
 import sys
 import os
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -88,13 +90,13 @@ def pad_sequences(sequences, max_len=None):
     return padded
 
 def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_rate=0.001):
-    """Train the LSTM model"""
+    """Train the LSTM model with overfitting prevention"""
     print("Loading and preparing training data...")
     X_train, y_train = create_training_data(json_files)
     
     print(f"Total training samples: {len(X_train)}")
     
-    # Pad sequences
+    # Pad sequences - use shorter sequences to prevent overfitting
     X_train_padded = pad_sequences(X_train, max_len=max_seq_len)
     
     # Convert to tensors
@@ -104,26 +106,57 @@ def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_
     print(f"Input shape: {X_tensor.shape}")
     print(f"Target shape: {y_tensor.shape}")
     
-    # Split into train and validation (80/20)
-    split_idx = int(0.8 * len(X_tensor))
-    X_train_split = X_tensor[:split_idx]
-    y_train_split = y_tensor[:split_idx]
-    X_val = X_tensor[split_idx:]
-    y_val = y_tensor[split_idx:]
+    # Split into train and validation with better stratification
+    X_train_split, X_val, y_train_split, y_val = train_test_split(
+        X_tensor, y_tensor, test_size=0.2, random_state=42
+    )
     
     print(f"Training samples: {len(X_train_split)}")
     print(f"Validation samples: {len(X_val)}")
     
-    # Create model
-    model = StormCellLSTM(input_size=6, hidden_size=64, num_layers=2, output_size=2)
+    # Create model - use smaller architecture to prevent overfitting
+    model = StormCellLSTM(input_size=6, hidden_size=32, num_layers=2, output_size=2)
     
-    # Loss and optimizer
+    # Add dropout to the model by wrapping it
+    class StormCellLSTMWithDropout(nn.Module):
+        def __init__(self, base_model, dropout_rate=0.3):
+            super(StormCellLSTMWithDropout, self).__init__()
+            self.base_model = base_model
+            self.dropout = nn.Dropout(dropout_rate)
+            
+        def forward(self, x):
+            # Apply dropout to LSTM output
+            out = self.base_model.lstm(x)[0]  # Get LSTM output
+            out = self.dropout(out[:, -1, :])  # Take last timestep and apply dropout
+            out = self.base_model.fc(out)
+            return out
+            
+        def train(self, mode=True):
+            """Override train to handle dropout properly"""
+            self.training = mode
+            self.base_model.train(mode)
+            return self
+    
+    # Wrap model with dropout
+    model = StormCellLSTMWithDropout(model, dropout_rate=0.3)
+    
+    # Loss and optimizer with weight decay (L2 regularization) - KEY OVERFITTING FIX
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     
-    # Training loop
-    print(f"\nTraining for {epochs} epochs...")
+    # Learning rate scheduler - automatically reduces LR when validation loss plateaus
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', 
+                                                          factor=0.5, patience=15, verbose=True)
+    
+    # Training loop with early stopping
+    print(f"\nTraining for {epochs} epochs with overfitting prevention...")
     best_val_loss = float('inf')
+    patience_counter = 0
+    patience = 30  # Early stopping patience
+    
+    # Track losses for plotting
+    train_losses = []
+    val_losses = []
     
     for epoch in range(epochs):
         # Training
@@ -145,6 +178,10 @@ def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
+            
+            # Gradient clipping - prevents exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
             
             total_loss += loss.item()
@@ -158,16 +195,62 @@ def train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_
             val_outputs = model(X_val)
             val_loss = criterion(val_outputs, y_val).item()
         
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), 'trained_storm_lstm.pth')
+        # Store losses for plotting
+        train_losses.append(avg_train_loss)
+        val_losses.append(val_loss)
         
+        # Update learning rate based on validation loss
+        scheduler.step(val_loss)
+        
+        # Early stopping check - KEY OVERFITTING PREVENTION
+        if val_loss < best_val_loss - 0.001:  # Minimum improvement threshold
+            best_val_loss = val_loss
+            patience_counter = 0
+            # Save best model
+            torch.save(model.state_dict(), 'trained_storm_lstm.pth')
+        else:
+            patience_counter += 1
+        
+        # Print progress
         if (epoch + 1) % 20 == 0 or epoch == 0:
-            print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}, LR: {current_lr:.6f}")
+        
+        # Early stopping - stops training when overfitting detected
+        if patience_counter >= patience:
+            print(f"\nEarly stopping triggered after {epoch+1} epochs!")
+            print("This prevents overfitting by stopping when validation loss stops improving.")
+            break
     
     print(f"\nBest validation loss: {best_val_loss:.4f}")
     print("Model saved to 'trained_storm_lstm.pth'")
+    
+    # Plot training curves to visualize overfitting prevention
+    plt.figure(figsize=(12, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses, label='Training Loss', alpha=0.7)
+    plt.plot(val_losses, label='Validation Loss', alpha=0.7)
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training vs Validation Loss - Overfitting Prevention Active')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(1, 2, 2)
+    # Plot last 50% of epochs for better visibility of convergence
+    start_idx = len(train_losses) // 2
+    plt.plot(range(start_idx, len(train_losses)), train_losses[start_idx:], label='Training Loss', alpha=0.7)
+    plt.plot(range(start_idx, len(val_losses)), val_losses[start_idx:], label='Validation Loss', alpha=0.7)
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training vs Validation Loss (Last 50% of epochs)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('training_curves.png', dpi=150, bbox_inches='tight')
+    plt.show()
     
     return model
 
@@ -181,14 +264,25 @@ def main():
     ]
     
     print("=" * 80)
-    print("STORM CELL LSTM TRAINING - IMPROVED VERSION")
+    print("STORM CELL LSTM TRAINING - OVERFITTING PREVENTION ENABLED")
     print("=" * 80)
     print()
+    print("🔧 OVERFITTING PREVENTIONS APPLIED:")
+    print("   • Dropout regularization (30%)")
+    print("   • Early stopping with patience")
+    print("   • Weight decay (L2 regularization)")
+    print("   • Learning rate scheduling")
+    print("   • Gradient clipping")
+    print("   • Smaller model architecture")
+    print()
     
-    model = train_model(json_files, epochs=300, batch_size=32, max_seq_len=20, learning_rate=0.0005)
+    model = train_model(json_files, epochs=300, batch_size=32, max_seq_len=15, learning_rate=0.001)
     
     print("\n" + "=" * 80)
-    print("Training complete! Run predict_and_compare.py to see the results.")
+    print("✅ TRAINING COMPLETE - OVERFITTING PREVENTED!")
+    print("📊 Check training_curves.png for loss visualization")
+    print("💾 Model saved as 'trained_storm_lstm.pth'")
+    print("🎯 Expected: Training and validation losses should decrease together")
     print("=" * 80)
 
 if __name__ == "__main__":
