@@ -26,16 +26,13 @@ def load_storm_data(base_path, features_to_extract=None):
     required_keys = ['dx', 'dy', 'dt']
     all_features_list = features_to_extract + required_keys
     
-    X_list = []
-    y_list = []
+    # Store all raw entries first to handle grouping
+    all_raw_entries = []
     
     # search for date folders
     date_folders = glob.glob(os.path.join(base_path, "*"))
     
     print(f"Found {len(date_folders)} potential date folders in {base_path}")
-    
-    count = 0
-    skipped = 0
     
     for date_folder in date_folders:
         if not os.path.isdir(date_folder):
@@ -52,61 +49,89 @@ def load_storm_data(base_path, features_to_extract=None):
                 with open(json_file, 'r') as f:
                     data = json.load(f)
                 
-                # We expect a list of storm objects or a single dict? 
-                # The user example showed a list of dicts: [ {...}, {...} ]
-                
                 input_data = data
                 if isinstance(data, dict):
                     input_data = [data]
                 
-                for entry in input_data:
-                    # Check for required keys
-                    if not all(key in entry for key in required_keys):
-                        skipped += 1
-                        continue
-                    
-                    # Extract Features
-                    # Some features are in 'properties', some in root (dx, dy, dt)
-                    features = []
-                    properties = entry.get('properties', {})
-                    
-                    valid_entry = True
-                    for feat in all_features_list:
-                        val = None
-                        if feat in entry:
-                            val = entry[feat]
-                        elif feat in properties:
-                            val = properties[feat]
-                        
-                        if val is None:
-                            valid_entry = False
-                            break
-                        features.append(float(val))
-                    
-                    if not valid_entry:
-                        skipped += 1
-                        continue
-                        
-                    # Calculate Targets (Velocity)
-                    dx = float(entry['dx'])
-                    dy = float(entry['dy'])
-                    dt = float(entry['dt'])
-                    
-                    if dt == 0:
-                        skipped += 1
-                        continue
-                        
-                    u = dx / dt
-                    v = dy / dt
-                    
-                    X_list.append(features)
-                    y_list.append([u, v])
-                    count += 1
+                all_raw_entries.extend(input_data)
                     
             except Exception as e:
                 print(f"Error reading {json_file}: {e}")
                 continue
 
-    print(f"Loaded {count} samples. Skipped {skipped} entries due to missing keys or invalid data.")
+    # Group by ID
+    grouped_data = {}
+    for entry in all_raw_entries:
+        id_val = entry.get('id')
+        if id_val is None:
+            continue
+        if id_val not in grouped_data:
+            grouped_data[id_val] = []
+        grouped_data[id_val].append(entry)
+        
+    X_list = []
+    y_list = []
+    skipped = 0
+    used_pairs = 0
+    
+    # Process each group
+    for id_val, history in grouped_data.items():
+        # Sort by timestamp
+        # Assume timestamp is in ISO format which sorts correctly as string
+        history.sort(key=lambda x: x.get('timestamp', ''))
+        
+        for i in range(len(history) - 1):
+            current_entry = history[i]
+            next_entry = history[i+1]
+            
+            # Check if current entry is valid (has input features)
+            if not all(key in current_entry for key in required_keys):
+                skipped += 1
+                continue
+                
+            # Check if next entry is valid (has target info)
+            if not all(key in next_entry for key in required_keys):
+                skipped += 1
+                continue
+                
+            # Extract Input Features from CURRENT entry
+            features = []
+            properties = current_entry.get('properties', {})
+            
+            valid_input = True
+            for feat in all_features_list:
+                val = None
+                if feat in current_entry:
+                    val = current_entry[feat]
+                elif feat in properties:
+                    val = properties[feat]
+                
+                if val is None:
+                    valid_input = False
+                    break
+                features.append(float(val))
+            
+            if not valid_input:
+                skipped += 1
+                continue
+                
+            # Calculate Target from NEXT entry
+            # Target is the velocity of the next scan
+            dx_next = float(next_entry['dx'])
+            dy_next = float(next_entry['dy'])
+            dt_next = float(next_entry['dt'])
+            
+            if dt_next == 0:
+                skipped += 1
+                continue
+                
+            u_target = dx_next / dt_next
+            v_target = dy_next / dt_next
+            
+            X_list.append(features)
+            y_list.append([u_target, v_target])
+            used_pairs += 1
+
+    print(f"Loaded {used_pairs} training pairs. Skipped {skipped} invalid or unpaired entries.")
     
     return np.array(X_list), np.array(y_list)

@@ -19,13 +19,17 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
         print("No valid data found. Exiting.")
         return
         
-    print(f"Data Loaded. X shape: {X.shape}, y shape: {y.shape}")
+    print(f"Data Loaded. Total samples: {len(X)}")
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Split data into Training and Verification
+    print("Splitting data into Training (80%) and Verification (20%) sets...")
+    X_train, X_verification, y_train, y_verification = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    print(f"Training Samples: {len(X_train)}")
+    print(f"Verification Samples: {len(X_verification)}")
     
     # Create model
-    print("Initializing Gradient Boosting Model...")
+    print("Initializing Gradient Boosting Model (Verbose Mode)...")
     model = create_gb_model()
     
     # Train
@@ -33,12 +37,13 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     model.fit(X_train, y_train)
     
     # Evaluate
-    print("Evaluating model...")
-    y_pred = model.predict(X_test)
+    print("Evaluating model on Verification set...")
+    y_pred = model.predict(X_verification)
     
-    mse = mean_squared_error(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_verification, y_pred)
+    mae = mean_absolute_error(y_verification, y_pred)
     
+    print(f"\nVerification Results:")
     print(f"Mean Squared Error: {mse:.4f}")
     print(f"Mean Absolute Error: {mae:.4f}")
     
@@ -52,9 +57,9 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     print(f"Model saved to {model_path}")
     
     # Save a verification prediction
-    print("\n--- Example Prediction ---")
-    print(f"Input Features: {X_test[0]}")
-    print(f"True Motion (u, v): {y_test[0]}")
+    print("\n--- Example Verification Prediction ---")
+    print(f"Input Features: {X_verification[0]}")
+    print(f"True Motion (u, v): {y_verification[0]}")
     print(f"Predicted Motion (u, v): {y_pred[0]}")
 
 if __name__ == "__main__":
