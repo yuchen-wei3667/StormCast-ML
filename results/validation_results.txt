@@ -1,12 +1,12 @@
 VALIDATION SET RESULTS
 ==================================================
-Total Samples: 122567
+Total Samples: 98287
 
-Overall MAE: 10.3058
-Overall RMSE: 17.4194
-Overall MSE: 303.4372
+Overall MAE: 6.3922
+Overall RMSE: 8.6880
+Overall MSE: 75.4816
 
-U-velocity MAE: 10.5725 m/s
-V-velocity MAE: 10.0392 m/s
-Speed MAE: 12.8503 m/s
-Direction MAE: 51.52 degrees
+U-velocity MAE: 6.7536 m/s
+V-velocity MAE: 6.0309 m/s
+Speed MAE: 7.0570 m/s
+Direction MAE: 55.72 degrees

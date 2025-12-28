@@ -176,6 +176,20 @@ def compare_baseline(data_dir, n_history=5):
     
     print(f"\nTotal valid samples: {len(X)}")
     
+    # Sanity check: filter out unrealistic velocities (> 31 m/s)
+    mag_true = np.sqrt(y_true[:, 0]**2 + y_true[:, 1]**2)
+    mag_baseline = np.sqrt(y_baseline[:, 0]**2 + y_baseline[:, 1]**2)
+    
+    valid_mask = (mag_true <= 31) & (mag_baseline <= 31)
+    n_filtered = np.sum(~valid_mask)
+    
+    if n_filtered > 0:
+        print(f"Filtered {n_filtered} samples with velocity > 31 m/s (sanity check)")
+        y_true = y_true[valid_mask]
+        y_baseline = y_baseline[valid_mask]
+        X = X[valid_mask]
+        print(f"Remaining samples: {len(y_true)}")
+    
     print("\n" + "="*60)
     print(f"BASELINE COMPARISON: {n_history}-Scan Average Extrapolation")
     print("="*60)

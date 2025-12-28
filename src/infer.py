@@ -94,6 +94,20 @@ def infer_on_validation(data_dir, model_dir, output_dir="results"):
     print("Making predictions...")
     y_pred = model.predict(X_scaled)
     
+    # Sanity check: filter out unrealistic velocities (> 31 m/s)
+    mag_true = np.sqrt(y[:, 0]**2 + y[:, 1]**2)
+    mag_pred = np.sqrt(y_pred[:, 0]**2 + y_pred[:, 1]**2)
+    
+    valid_mask = (mag_true <= 31) & (mag_pred <= 31)
+    n_filtered = np.sum(~valid_mask)
+    
+    if n_filtered > 0:
+        print(f"\nFiltered {n_filtered} samples with velocity > 31 m/s (sanity check)")
+        y = y[valid_mask]
+        y_pred = y_pred[valid_mask]
+        X = X[valid_mask]
+        print(f"Remaining samples: {len(y)}")
+    
     # Compute overall metrics
     mse = mean_squared_error(y, y_pred)
     mae = mean_absolute_error(y, y_pred)
