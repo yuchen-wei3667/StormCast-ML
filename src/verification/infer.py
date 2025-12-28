@@ -7,7 +7,9 @@ import pickle
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
+import sys
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model'))
 from data_loader import load_storm_data
 
 def load_model_and_scaler(model_dir):
