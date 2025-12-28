@@ -4,10 +4,24 @@ import pickle
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
-# Import our new modules
+# Import our modules
 from data_loader import load_storm_data
-from model import create_gb_model
+
+# Flag to use improved model
+USE_IMPROVED_MODEL = True
+
+if USE_IMPROVED_MODEL:
+    try:
+        from model_improved import create_gb_model
+        print("Using improved model with XGBoost and better hyperparameters")
+    except ImportError:
+        from model import create_gb_model
+        USE_IMPROVED_MODEL = False
+        print("Improved model not available, using standard model")
+else:
+    from model import create_gb_model
 
 def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl"):
     print(f"Loading data from {data_dir}...")
@@ -28,14 +42,30 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     print(f"Training Samples: {len(X_train)}")
     print(f"Verification Samples: {len(X_verification)}")
     
+    # Normalize features using StandardScaler
+    print("Normalizing features...")
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_verification_scaled = scaler.transform(X_verification)
+    
     # Split training data further for internal validation monitoring
     X_train_fit, X_train_val, y_train_fit, y_train_val = train_test_split(
-        X_train, y_train, test_size=0.1, random_state=42
+        X_train_scaled, y_train, test_size=0.1, random_state=42
     )
     
     # Create model with validation data for monitoring
-    print("Initializing Gradient Boosting Model (Verbose Mode)...")
-    model = create_gb_model(X_val=X_train_val, y_val=y_train_val)
+    print("Initializing Gradient Boosting Model (Improved Version)...")
+    if USE_IMPROVED_MODEL:
+        model = create_gb_model(
+            n_estimators=1000,
+            learning_rate=0.05,
+            max_depth=5,
+            X_val=X_train_val,
+            y_val=y_train_val,
+            use_xgboost=True
+        )
+    else:
+        model = create_gb_model(X_val=X_train_val, y_val=y_train_val)
     
     # Train
     print("Training model...")
@@ -72,7 +102,7 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     
     # Evaluate
     print("Evaluating model on Verification set...")
-    y_pred = model.predict(X_verification)
+    y_pred = model.predict(X_verification_scaled)
     
     mse = mean_squared_error(y_verification, y_pred)
     mae = mean_absolute_error(y_verification, y_pred)
@@ -81,18 +111,24 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     print(f"Mean Squared Error: {mse:.4f}")
     print(f"Mean Absolute Error: {mae:.4f}")
     
-    # Save model
+    # Save model and scaler
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
     model_path = os.path.join(output_dir, model_name)
+    scaler_path = os.path.join(output_dir, "scaler.pkl")
+    
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
+    with open(scaler_path, 'wb') as f:
+        pickle.dump(scaler, f)
+    
     print(f"Model saved to {model_path}")
+    print(f"Scaler saved to {scaler_path}")
     
     # Save a verification prediction
     print("\n--- Example Verification Prediction ---")
-    print(f"Input Features: {X_verification[0]}")
+    print(f"Input Features (first 6): {X_verification[0][:6]}")
     print(f"True Motion (u, v): {y_verification[0]}")
     print(f"Predicted Motion (u, v): {y_pred[0]}")
 

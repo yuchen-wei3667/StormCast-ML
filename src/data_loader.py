@@ -121,6 +121,34 @@ def load_storm_data(base_path, features_to_extract=None):
             if not valid_input:
                 skipped += 1
                 continue
+            
+            # Feature Engineering - Add derived features
+            # Extract base values for engineering
+            dx_curr = float(current_entry['dx'])
+            dy_curr = float(current_entry['dy'])
+            dt_curr = float(current_entry['dt'])
+            
+            # 1. Velocity magnitude and direction
+            velocity_mag = np.sqrt(dx_curr**2 + dy_curr**2) / dt_curr if dt_curr > 0 else 0
+            velocity_dir = np.arctan2(dy_curr, dx_curr)
+            
+            # 2. Get some key features for interactions (if they exist)
+            mlcape = float(current_entry.get('properties', {}).get('MLCAPE', 0))
+            ebshear = float(current_entry.get('properties', {}).get('EBShear', 0))
+            vil = float(current_entry.get('properties', {}).get('VIL', 0))
+            precip_rate = float(current_entry.get('properties', {}).get('PrecipRate', 0))
+            
+            # 3. Interaction features
+            cape_shear = mlcape * ebshear / 1000.0  # Normalized
+            vil_precip = vil * precip_rate / 100.0  # Normalized
+            
+            # Add engineered features
+            features.extend([
+                velocity_mag,
+                velocity_dir,
+                cape_shear,
+                vil_precip
+            ])
                 
             # Calculate Target from NEXT entry
             # Target is the velocity of the next scan
