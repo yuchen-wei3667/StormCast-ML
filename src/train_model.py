@@ -28,13 +28,47 @@ def train_model(data_dir, output_dir="models", model_name="gb_storm_motion.pkl")
     print(f"Training Samples: {len(X_train)}")
     print(f"Verification Samples: {len(X_verification)}")
     
-    # Create model
+    # Split training data further for internal validation monitoring
+    X_train_fit, X_train_val, y_train_fit, y_train_val = train_test_split(
+        X_train, y_train, test_size=0.1, random_state=42
+    )
+    
+    # Create model with validation data for monitoring
     print("Initializing Gradient Boosting Model (Verbose Mode)...")
-    model = create_gb_model()
+    model = create_gb_model(X_val=X_train_val, y_val=y_train_val)
     
     # Train
     print("Training model...")
-    model.fit(X_train, y_train)
+    # Fit each estimator separately to enable monitoring
+    for idx, estimator in enumerate(model.estimators_):
+        output_name = "u-velocity" if idx == 0 else "v-velocity"
+        print(f"\n=== Training {output_name} ===")
+        estimator.fit(X_train_fit, y_train_fit[:, idx])
+    
+    
+    # Compute validation loss on internal validation set
+    print("\n--- Internal Validation Scores (from training) ---")
+    y_train_val_pred = model.predict(X_train_val)
+    train_val_mse = mean_squared_error(y_train_val, y_train_val_pred)
+    train_val_mae = mean_absolute_error(y_train_val, y_train_val_pred)
+    
+    for idx, estimator in enumerate(model.estimators_):
+        output_name = "u-velocity" if idx == 0 else "v-velocity"
+        print(f"\n{output_name}:")
+        if hasattr(estimator, 'train_score_'):
+            final_train_loss = estimator.train_score_[-1]
+            print(f"  Final Train Loss: {final_train_loss:.4f}")
+            print(f"  Total iterations: {len(estimator.train_score_)}")
+            
+            # Compute validation loss for this output
+            y_val_single = y_train_val[:, idx]
+            y_pred_single = y_train_val_pred[:, idx]
+            val_mse_single = mean_squared_error(y_val_single, y_pred_single)
+            print(f"  Validation MSE: {val_mse_single:.4f}")
+    
+    print(f"\nOverall Internal Validation:")
+    print(f"  MSE: {train_val_mse:.4f}")
+    print(f"  MAE: {train_val_mae:.4f}")
     
     # Evaluate
     print("Evaluating model on Verification set...")
