@@ -9,7 +9,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model', 'gbr'))
 from data_loader import load_storm_data
 
 def load_model_and_scaler(model_dir):

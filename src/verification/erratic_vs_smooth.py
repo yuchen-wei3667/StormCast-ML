@@ -9,7 +9,7 @@ import pickle
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model', 'gbr'))
 from data_loader import load_storm_data
 import glob
 import json
@@ -138,13 +138,62 @@ def load_storm_sequences_with_variance(base_path, n_history=5):
             if mag_baseline > 31:
                 continue
             
-            # Store in appropriate category
+            # Get current scan motion for features
             dx_curr = float(current_scan['dx'])
             dy_curr = float(current_scan['dy'])
             dt_curr = float(current_scan['dt'])
             
+            # Extract all features properly (matching data_loader.py)
+            # Base features from properties
+            features_to_extract = [
+                'SRW46km', 'MeanWind_1-3kmAGL', 'EBShear',
+                'EchoTop18', 'EchoTop30', 'PrecipRate', 'VILDensity', 
+                'RALA', 'VII', 'ProbSevere', 'ProbWind', 'ProbHail', 'ProbTor',
+                'MLCAPE', 'MUCAPE', 'MLCIN', 'DCAPE', 'CAPE_M10M30', 'LCL',
+                'Wetbulb_0C_Hgt', 'LLLR', 'MLLR', 'SRH01km', 'SRH02km', 'LJA',
+                'CompRef', 'Ref10', 'Ref20', 'MESH', 'H50_Above_0C', 'EchoTop50', 'VIL'
+            ]
+            
+            # Extract base features
+            features = []
+            properties = current_scan.get('properties', {})
+            valid_features = True
+            
+            for feat in features_to_extract:
+                val = None
+                if feat in current_scan:
+                    val = current_scan[feat]
+                elif feat in properties:
+                    val = properties[feat]
+                
+                if val is None:
+                    valid_features = False
+                    break
+                features.append(float(val))
+            
+            if not valid_features:
+                continue
+            
+            # Add dx, dy, dt
+            features.extend([dx_curr, dy_curr, dt_curr])
+            
+            # Feature engineering (matching data_loader.py)
+            velocity_mag = np.sqrt(dx_curr**2 + dy_curr**2) / dt_curr if dt_curr > 0 else 0
+            velocity_dir = np.arctan2(dy_curr, dx_curr)
+            
+            mlcape = float(current_scan.get('properties', {}).get('MLCAPE', 0))
+            ebshear = float(current_scan.get('properties', {}).get('EBShear', 0))
+            vil = float(current_scan.get('properties', {}).get('VIL', 0))
+            precip_rate = float(current_scan.get('properties', {}).get('PrecipRate', 0))
+            
+            cape_shear = mlcape * ebshear / 1000.0
+            vil_precip = vil * precip_rate / 100.0
+            
+            features.extend([velocity_mag, velocity_dir, cape_shear, vil_precip])
+            
+            # Now features should have 38 elements total
             target_data = erratic_data if is_erratic else smooth_data
-            target_data['X'].append([dx_curr, dy_curr, dt_curr])
+            target_data['X'].append(features)
             target_data['y_true'].append([u_true, v_true])
             target_data['y_baseline'].append([u_baseline, v_baseline])
     
@@ -245,6 +294,86 @@ def compare_erratic_vs_smooth(data_dir, model_dir, n_history=5):
         print(f"  ML Model MAE: {erratic_ml['mae']:.4f} m/s")
         print(f"  Baseline MAE: {erratic_baseline['mae']:.4f} m/s")
         print(f"  Improvement: {erratic_improvement:.1f}%")
+    
+    # Create visualizations
+    create_scatter_plots(smooth_data, erratic_data, model, scaler)
+
+def create_scatter_plots(smooth_data, erratic_data, model, scaler):
+    """Create scatter plots comparing predictions for smooth vs erratic storms"""
+    import matplotlib.pyplot as plt
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    
+    # Smooth storms - ML Model
+    if len(smooth_data['X']) > 0:
+        X_smooth_scaled = scaler.transform(smooth_data['X'])
+        y_smooth_pred = model.predict(X_smooth_scaled)
+        
+        axes[0, 0].scatter(smooth_data['y_true'][:, 0], y_smooth_pred[:, 0], 
+                          alpha=0.4, s=10, c='#2E86AB', label='U-velocity')
+        axes[0, 0].scatter(smooth_data['y_true'][:, 1], y_smooth_pred[:, 1], 
+                          alpha=0.4, s=10, c='#F77F00', label='V-velocity')
+        axes[0, 0].plot([-30, 30], [-30, 30], 'r--', linewidth=2, label='Perfect prediction')
+        axes[0, 0].set_xlabel('True Velocity (m/s)', fontsize=11)
+        axes[0, 0].set_ylabel('Predicted Velocity (m/s)', fontsize=11)
+        axes[0, 0].set_title('Smooth Storms - ML Model', fontsize=12, fontweight='bold')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
+        axes[0, 0].set_xlim(-30, 30)
+        axes[0, 0].set_ylim(-30, 30)
+    
+    # Smooth storms - Baseline
+    if len(smooth_data['y_baseline']) > 0:
+        axes[0, 1].scatter(smooth_data['y_true'][:, 0], smooth_data['y_baseline'][:, 0], 
+                          alpha=0.4, s=10, c='#2E86AB', label='U-velocity')
+        axes[0, 1].scatter(smooth_data['y_true'][:, 1], smooth_data['y_baseline'][:, 1], 
+                          alpha=0.4, s=10, c='#F77F00', label='V-velocity')
+        axes[0, 1].plot([-30, 30], [-30, 30], 'r--', linewidth=2, label='Perfect prediction')
+        axes[0, 1].set_xlabel('True Velocity (m/s)', fontsize=11)
+        axes[0, 1].set_ylabel('Predicted Velocity (m/s)', fontsize=11)
+        axes[0, 1].set_title('Smooth Storms - Baseline', fontsize=12, fontweight='bold')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
+        axes[0, 1].set_xlim(-30, 30)
+        axes[0, 1].set_ylim(-30, 30)
+    
+    # Erratic storms - ML Model
+    if len(erratic_data['X']) > 0:
+        X_erratic_scaled = scaler.transform(erratic_data['X'])
+        y_erratic_pred = model.predict(X_erratic_scaled)
+        
+        axes[1, 0].scatter(erratic_data['y_true'][:, 0], y_erratic_pred[:, 0], 
+                          alpha=0.3, s=5, c='#2E86AB', label='U-velocity')
+        axes[1, 0].scatter(erratic_data['y_true'][:, 1], y_erratic_pred[:, 1], 
+                          alpha=0.3, s=5, c='#F77F00', label='V-velocity')
+        axes[1, 0].plot([-30, 30], [-30, 30], 'r--', linewidth=2, label='Perfect prediction')
+        axes[1, 0].set_xlabel('True Velocity (m/s)', fontsize=11)
+        axes[1, 0].set_ylabel('Predicted Velocity (m/s)', fontsize=11)
+        axes[1, 0].set_title('Erratic Storms - ML Model', fontsize=12, fontweight='bold')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True, alpha=0.3)
+        axes[1, 0].set_xlim(-30, 30)
+        axes[1, 0].set_ylim(-30, 30)
+    
+    # Erratic storms - Baseline
+    if len(erratic_data['y_baseline']) > 0:
+        axes[1, 1].scatter(erratic_data['y_true'][:, 0], erratic_data['y_baseline'][:, 0], 
+                          alpha=0.3, s=5, c='#2E86AB', label='U-velocity')
+        axes[1, 1].scatter(erratic_data['y_true'][:, 1], erratic_data['y_baseline'][:, 1], 
+                          alpha=0.3, s=5, c='#F77F00', label='V-velocity')
+        axes[1, 1].plot([-30, 30], [-30, 30], 'r--', linewidth=2, label='Perfect prediction')
+        axes[1, 1].set_xlabel('True Velocity (m/s)', fontsize=11)
+        axes[1, 1].set_ylabel('Predicted Velocity (m/s)', fontsize=11)
+        axes[1, 1].set_title('Erratic Storms - Baseline', fontsize=12, fontweight='bold')
+        axes[1, 1].legend()
+        axes[1, 1].grid(True, alpha=0.3)
+        axes[1, 1].set_xlim(-30, 30)
+        axes[1, 1].set_ylim(-30, 30)
+    
+    plt.tight_layout()
+    plt.savefig('results/erratic_vs_smooth_scatter.png', dpi=150, bbox_inches='tight')
+    print(f"\nScatter plots saved to results/erratic_vs_smooth_scatter.png")
+    plt.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare erratic vs smooth motion")
