@@ -1,89 +1,112 @@
 import json
-import torch
+import os
+import glob
 import numpy as np
-from torch.utils.data import Dataset
+from pathlib import Path
 
-class StormCellDataset(Dataset):
-    def __init__(self, json_file, sequence_length=10):
-        self.data = self.load_data(json_file)
-        self.sequence_length = sequence_length
-
-    def load_data(self, json_file):
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-        return data['features']
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        feature = self.data[idx]
-        storm_history = feature.get('storm_history', [])
-        
-        # Extract features
-        # We need to handle cases where history is shorter than sequence_length
-        # For now, let's assume we just take the available history up to sequence_length
-        # and pad if necessary, or just return what we have and let the collate_fn handle it
-        # But for a simple LSTM, fixed length is easier.
-        
-        # Features to extract:
-        # vx, vy, max_refl, VIL, ProbSevere, FlashRate, EchoTop18
-        
-        sequences = []
-        targets = []
-        
-        # Sort history by timestamp just in case
-        storm_history.sort(key=lambda x: x['timestamp'])
-        
-        for point in storm_history:
-            # Input features
-            feats = [
-                float(point.get('dx', 0)),
-                float(point.get('dy', 0)),
-                float(point.get('dt', 0)),
-                float(point.get('EBShear', 0)),
-                float(point.get('SRW46km', 0)),
-                float(point.get('MeanWind_1-3kmAGL', 0)),
-            ]
-            sequences.append(feats)
-            
-            # Target is the NEXT step's vx, vy. 
-            # But wait, the prompt asks to "output predicted motion vectors".
-            # Usually this means predicting the motion at the current step or the next step.
-            # Let's assume we want to predict the CURRENT motion vector given the history up to this point?
-            # Or predict the NEXT motion vector?
-            # Given "predict storm cell motion", usually implies future motion.
-            # Let's set target as the vx, vy of the *next* timestep.
-            # However, for the purpose of this specific request "takes in the JSON input directly and outputs predicted motion vectors",
-            # it might mean inference mode.
-            
-        # For training, we would create sliding windows. 
-        # For this specific file, let's just make it capable of parsing a single storm cell's history 
-        # and returning a tensor suitable for the model.
-        
-        # Let's return the full history as a sequence
-        return torch.tensor(sequences, dtype=torch.float32)
-
-def parse_storm_cell_json(json_data):
+def load_storm_data(base_path, features_to_extract=None):
     """
-    Parses a single storm cell feature from the JSON and returns a tensor.
-    """
-    storm_history = json_data.get('storm_history', [])
-    storm_history.sort(key=lambda x: x['timestamp'])
+    Load storm data from the specified base path.
+    Expected structure: base_path/{date}/cells/*.json
     
-    sequences = []
-    for point in storm_history:
-        feats = [
-            float(point.get('dx', 0)),
-            float(point.get('dy', 0)),
-            float(point.get('dt', 0)),
-            float(point.get('EBShear', 0)),
-            float(point.get('SRW46km', 0)),
-            float(point.get('MeanWind_1-3kmAGL', 0)),
-        ]
-        sequences.append(feats)
+    Args:
+        base_path (str): Path to the root directory containing date folders.
+        features_to_extract (list): List of feature names to extract from properties.
+                                    Defaults to ['SRW46km', 'MeanWind_1-3kmAGL', 'EBShear'].
+                                    Also extracts 'dx', 'dy', 'dt' by default.
+    
+    Returns:
+        X (np.ndarray): Feature matrix.
+        y (np.ndarray): Target matrix (u, v velocities).
+    """
+    if features_to_extract is None:
+        features_to_extract = ['SRW46km', 'MeanWind_1-3kmAGL', 'EBShear']
+    
+    # Always include dx, dy, dt in features as requested
+    required_keys = ['dx', 'dy', 'dt']
+    all_features_list = features_to_extract + required_keys
+    
+    X_list = []
+    y_list = []
+    
+    # search for date folders
+    date_folders = glob.glob(os.path.join(base_path, "*"))
+    
+    print(f"Found {len(date_folders)} potential date folders in {base_path}")
+    
+    count = 0
+    skipped = 0
+    
+    for date_folder in date_folders:
+        if not os.path.isdir(date_folder):
+            continue
+            
+        cells_dir = os.path.join(date_folder, "cells")
+        if not os.path.exists(cells_dir):
+            continue
+            
+        json_files = glob.glob(os.path.join(cells_dir, "*.json"))
         
-    if not sequences:
-        return torch.empty(0, 6)
-        
-    return torch.tensor(sequences, dtype=torch.float32).unsqueeze(0) # Add batch dimension
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                
+                # We expect a list of storm objects or a single dict? 
+                # The user example showed a list of dicts: [ {...}, {...} ]
+                
+                input_data = data
+                if isinstance(data, dict):
+                    input_data = [data]
+                
+                for entry in input_data:
+                    # Check for required keys
+                    if not all(key in entry for key in required_keys):
+                        skipped += 1
+                        continue
+                    
+                    # Extract Features
+                    # Some features are in 'properties', some in root (dx, dy, dt)
+                    features = []
+                    properties = entry.get('properties', {})
+                    
+                    valid_entry = True
+                    for feat in all_features_list:
+                        val = None
+                        if feat in entry:
+                            val = entry[feat]
+                        elif feat in properties:
+                            val = properties[feat]
+                        
+                        if val is None:
+                            valid_entry = False
+                            break
+                        features.append(float(val))
+                    
+                    if not valid_entry:
+                        skipped += 1
+                        continue
+                        
+                    # Calculate Targets (Velocity)
+                    dx = float(entry['dx'])
+                    dy = float(entry['dy'])
+                    dt = float(entry['dt'])
+                    
+                    if dt == 0:
+                        skipped += 1
+                        continue
+                        
+                    u = dx / dt
+                    v = dy / dt
+                    
+                    X_list.append(features)
+                    y_list.append([u, v])
+                    count += 1
+                    
+            except Exception as e:
+                print(f"Error reading {json_file}: {e}")
+                continue
+
+    print(f"Loaded {count} samples. Skipped {skipped} entries due to missing keys or invalid data.")
+    
+    return np.array(X_list), np.array(y_list)
