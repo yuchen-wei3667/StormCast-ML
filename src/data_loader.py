@@ -20,7 +20,14 @@ def load_storm_data(base_path, features_to_extract=None):
         y (np.ndarray): Target matrix (u, v velocities).
     """
     if features_to_extract is None:
-        features_to_extract = ['SRW46km', 'MeanWind_1-3kmAGL', 'EBShear']
+        features_to_extract = [
+            'SRW46km', 'MeanWind_1-3kmAGL', 'EBShear',
+            'EchoTop18', 'EchoTop30', 'PrecipRate', 'VILDensity', 
+            'RALA', 'VII', 'ProbSevere', 'ProbWind', 'ProbHail', 'ProbTor',
+            'MLCAPE', 'MUCAPE', 'MLCIN', 'DCAPE', 'CAPE_M10M30', 'LCL',
+            'Wetbulb_0C_Hgt', 'LLLR', 'MLLR', 'SRH01km', 'SRH02km', 'LJA',
+            'CompRef', 'Ref10', 'Ref20', 'MESH', 'H50_Above_0C', 'EchoTop50', 'VIL'
+        ]
     
     # Always include dx, dy, dt in features as requested
     required_keys = ['dx', 'dy', 'dt']
