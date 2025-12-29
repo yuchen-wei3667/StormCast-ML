@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model', 'lstm'))
 
 from data_loader import load_storm_data
 from gru_data_loader import load_sequences
+from gru_model import velocity_aware_huber_loss, directional_error_deg
 
 def load_gbr_model(model_dir):
     """Load GBR model and scaler"""
@@ -25,11 +26,17 @@ def load_gbr_model(model_dir):
         scaler = pickle.load(f)
     return model, scaler
 
-def load_gru_model(model_dir):
+def load_gru_model(model_dir, filename="gru_storm_motion.keras"):
     """Load GRU model and scaler"""
     import tensorflow as tf
-    model = tf.keras.models.load_model(os.path.join(model_dir, "gru_storm_motion.keras"))
-    with open(os.path.join(model_dir, "gru_scaler.pkl"), 'rb') as f:
+    custom_objects = {
+        "velocity_aware_huber_loss": velocity_aware_huber_loss,
+        "directional_error_deg": directional_error_deg
+    }
+    model = tf.keras.models.load_model(os.path.join(model_dir, filename), custom_objects=custom_objects)
+    
+    scaler_filename = filename.replace('.keras', '_scaler.pkl')
+    with open(os.path.join(model_dir, scaler_filename), 'rb') as f:
         scaler = pickle.load(f)
     return model, scaler
 

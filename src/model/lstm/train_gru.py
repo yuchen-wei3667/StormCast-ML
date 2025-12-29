@@ -12,7 +12,7 @@ import pickle
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from gru_data_loader import load_sequences
-from gru_model import create_gru_model, get_callbacks
+from gru_model import create_gru_model, get_callbacks, velocity_aware_huber_loss, directional_error_deg
 
 def train_gru(data_dir, output_dir="models", model_filename="gru_storm_motion.keras", 
               sequence_length=5, batch_size=64, epochs=100, val_split=0.2):
@@ -105,10 +105,11 @@ def train_gru(data_dir, output_dir="models", model_filename="gru_storm_motion.ke
     print(f"Model saved to: {model_path}")
     print(f"Scaler saved to: {scaler_path}")
     
-    # Final evaluation
-    print(f"\n{'='*70}")
-    print("FINAL EVALUATION")
-    print("="*70)
+    print(f"\nFinal Evaluation (using custom objects):")
+    custom_objects = {
+        "velocity_aware_huber_loss": velocity_aware_huber_loss,
+        "directional_error_deg": directional_error_deg
+    }
     
     train_loss, train_mae, train_mse, train_rmse = model.evaluate(X_train, y_train, verbose=0)
     val_loss, val_mae, val_mse, val_rmse = model.evaluate(X_val, y_val, verbose=0)
