@@ -3,24 +3,30 @@ Training script for GRU storm motion prediction model
 """
 import argparse
 import os
+import sys
 import numpy as np
 from sklearn.model_selection import train_test_split
 import pickle
 
+# Add the current directory to sys.path to ensure local imports work
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from gru_data_loader import load_sequences
 from gru_model import create_gru_model, get_callbacks
 
-def train_gru(data_dir, output_dir="models", sequence_length=5, 
-              batch_size=64, epochs=100):
+def train_gru(data_dir, output_dir="models", model_filename="gru_storm_motion.keras", 
+              sequence_length=5, batch_size=64, epochs=100, val_split=0.2):
     """
     Train GRU model on storm sequences
     
     Args:
         data_dir: Path to training data
         output_dir: Directory to save model
+        model_filename: Filename for the saved model
         sequence_length: Number of scans in sequence
         batch_size: Training batch size
         epochs: Maximum number of epochs
+        val_split: Fraction of data for validation
     """
     print("="*70)
     print("GRU STORM MOTION PREDICTION - TRAINING")
@@ -37,7 +43,7 @@ def train_gru(data_dir, output_dir="models", sequence_length=5,
     
     # Split data
     X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=val_split, random_state=42
     )
     
     print(f"\nData split:")
@@ -63,8 +69,9 @@ def train_gru(data_dir, output_dir="models", sequence_length=5,
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    model_path = os.path.join(output_dir, "gru_storm_motion.keras")
-    scaler_path = os.path.join(output_dir, "gru_scaler.pkl")
+    model_path = os.path.join(output_dir, model_filename)
+    scaler_filename = model_filename.replace('.keras', '_scaler.pkl')
+    scaler_path = os.path.join(output_dir, scaler_filename)
     
     # Get callbacks
     callback_list = get_callbacks(model_path, patience_early=15, patience_lr=5)
@@ -139,17 +146,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train GRU storm motion model")
     parser.add_argument("--data_dir", required=True, help="Path to training data")
     parser.add_argument("--output_dir", default="models", help="Output directory")
+    parser.add_argument("--model_filename", default="gru_storm_motion.keras", 
+                        help="Filename for the saved model")
     parser.add_argument("--sequence_length", type=int, default=7, 
                        help="Number of scans in sequence (default: 7)")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=100, help="Max epochs")
+    parser.add_argument("--val_split", type=float, default=0.2, 
+                        help="Fraction of data for validation (default: 0.2)")
     
     args = parser.parse_args()
     
     train_gru(
         args.data_dir,
         args.output_dir,
+        args.model_filename,
         args.sequence_length,
         args.batch_size,
-        args.epochs
+        args.epochs,
+        args.val_split
     )
