@@ -44,11 +44,17 @@ def train_gru(data_dir, output_dir="models", sequence_length=5,
     print(f"  Training: {len(X_train)} sequences")
     print(f"  Validation: {len(X_val)} sequences")
     
-    # Create model
-    print(f"\nCreating GRU model...")
+    # Create model with improved architecture
+    print(f"\nCreating refined GRU model...")
     model = create_gru_model(
         sequence_length=X.shape[1],
-        n_features=X.shape[2]
+        n_features=X.shape[2],
+        gru_units_1=128,  # Increased from 64
+        gru_units_2=64,   # Increased from 32
+        dropout_rate=0.3,
+        l2_reg=0.001,     # Reduced from 0.01
+        use_bidirectional=True,
+        use_attention=True
     )
     
     model.summary()
@@ -97,18 +103,18 @@ def train_gru(data_dir, output_dir="models", sequence_length=5,
     print("FINAL EVALUATION")
     print("="*70)
     
-    train_loss, train_mae, train_mse = model.evaluate(X_train, y_train, verbose=0)
-    val_loss, val_mae, val_mse = model.evaluate(X_val, y_val, verbose=0)
+    train_loss, train_mae, train_mse, train_rmse = model.evaluate(X_train, y_train, verbose=0)
+    val_loss, val_mae, val_mse, val_rmse = model.evaluate(X_val, y_val, verbose=0)
     
     print(f"\nTraining Set:")
     print(f"  Loss (MSE): {train_loss:.4f}")
     print(f"  MAE: {train_mae:.4f} m/s")
-    print(f"  RMSE: {np.sqrt(train_mse):.4f} m/s")
+    print(f"  RMSE: {train_rmse:.4f} m/s")
     
     print(f"\nValidation Set:")
     print(f"  Loss (MSE): {val_loss:.4f}")
     print(f"  MAE: {val_mae:.4f} m/s")
-    print(f"  RMSE: {np.sqrt(val_mse):.4f} m/s")
+    print(f"  RMSE: {val_rmse:.4f} m/s")
     
     # Example prediction
     print(f"\n{'='*70}")
@@ -133,8 +139,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train GRU storm motion model")
     parser.add_argument("--data_dir", required=True, help="Path to training data")
     parser.add_argument("--output_dir", default="models", help="Output directory")
-    parser.add_argument("--sequence_length", type=int, default=5, 
-                       help="Number of scans in sequence")
+    parser.add_argument("--sequence_length", type=int, default=7, 
+                       help="Number of scans in sequence (default: 7)")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--epochs", type=int, default=100, help="Max epochs")
     

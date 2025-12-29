@@ -8,10 +8,11 @@ from tensorflow.keras import layers, models, callbacks
 import numpy as np
 
 def create_gru_model(sequence_length=5, n_features=44, 
-                     gru_units_1=64, gru_units_2=32,
-                     dropout_rate=0.3, l2_reg=0.01):
+                     gru_units_1=128, gru_units_2=64,
+                     dropout_rate=0.3, l2_reg=0.001,
+                     use_bidirectional=True, use_attention=True):
     """
-    Create GRU model optimized for CPU inference
+    Create improved GRU model optimized for CPU inference
     
     Args:
         sequence_length: Number of timesteps in sequence
@@ -20,6 +21,8 @@ def create_gru_model(sequence_length=5, n_features=44,
         gru_units_2: Units in second GRU layer
         dropout_rate: Dropout rate for regularization
         l2_reg: L2 regularization factor
+        use_bidirectional: Use bidirectional GRU layers
+        use_attention: Add attention mechanism
         
     Returns:
         Compiled Keras model
@@ -27,41 +30,86 @@ def create_gru_model(sequence_length=5, n_features=44,
     # Input layer
     inputs = layers.Input(shape=(sequence_length, n_features), name='sequence_input')
     
-    # First GRU layer with return_sequences=True
-    x = layers.GRU(
-        gru_units_1,
-        return_sequences=True,
-        kernel_regularizer=keras.regularizers.l2(l2_reg),
-        name='gru_1'
-    )(inputs)
+    # First GRU layer with optional bidirectional
+    if use_bidirectional:
+        x = layers.Bidirectional(
+            layers.GRU(
+                gru_units_1,
+                return_sequences=True,
+                kernel_regularizer=keras.regularizers.l2(l2_reg),
+                recurrent_dropout=0.1,
+                name='gru_1'
+            ),
+            name='bidirectional_1'
+        )(inputs)
+    else:
+        x = layers.GRU(
+            gru_units_1,
+            return_sequences=True,
+            kernel_regularizer=keras.regularizers.l2(l2_reg),
+            recurrent_dropout=0.1,
+            name='gru_1'
+        )(inputs)
+    
+    x = layers.BatchNormalization(name='bn_1')(x)
     x = layers.Dropout(dropout_rate, name='dropout_1')(x)
     
-    # Second GRU layer with return_sequences=False
-    x = layers.GRU(
-        gru_units_2,
-        return_sequences=False,
-        kernel_regularizer=keras.regularizers.l2(l2_reg),
-        name='gru_2'
-    )(x)
+    # Attention mechanism (if enabled)
+    if use_attention:
+        # Simple attention layer
+        attention = layers.Dense(1, activation='tanh', name='attention_score')(x)
+        attention = layers.Softmax(axis=1, name='attention_weights')(attention)
+        x = layers.Multiply(name='attention_output')([x, attention])
+    
+    # Second GRU layer
+    if use_bidirectional:
+        x = layers.Bidirectional(
+            layers.GRU(
+                gru_units_2,
+                return_sequences=False,
+                kernel_regularizer=keras.regularizers.l2(l2_reg),
+                recurrent_dropout=0.1,
+                name='gru_2'
+            ),
+            name='bidirectional_2'
+        )(x)
+    else:
+        x = layers.GRU(
+            gru_units_2,
+            return_sequences=False,
+            kernel_regularizer=keras.regularizers.l2(l2_reg),
+            recurrent_dropout=0.1,
+            name='gru_2'
+        )(x)
+    
+    x = layers.BatchNormalization(name='bn_2')(x)
     x = layers.Dropout(dropout_rate, name='dropout_2')(x)
     
-    # Dense layers
-    x = layers.Dense(32, activation='relu', 
-                     kernel_regularizer=keras.regularizers.l2(l2_reg),
-                     name='dense_1')(x)
-    x = layers.Dropout(dropout_rate / 2, name='dropout_3')(x)
+    # Dense layers with residual connection
+    dense_1 = layers.Dense(64, activation='relu', 
+                          kernel_regularizer=keras.regularizers.l2(l2_reg),
+                          name='dense_1')(x)
+    dense_1 = layers.BatchNormalization(name='bn_3')(dense_1)
+    dense_1 = layers.Dropout(dropout_rate / 2, name='dropout_3')(dense_1)
+    
+    dense_2 = layers.Dense(32, activation='relu',
+                          kernel_regularizer=keras.regularizers.l2(l2_reg),
+                          name='dense_2')(dense_1)
     
     # Output layer (u, v velocities)
-    outputs = layers.Dense(2, activation='linear', name='output')(x)
+    outputs = layers.Dense(2, activation='linear', name='output')(dense_2)
     
     # Create model
-    model = models.Model(inputs=inputs, outputs=outputs, name='storm_gru')
+    model = models.Model(inputs=inputs, outputs=outputs, name='storm_gru_refined')
     
-    # Compile with Adam optimizer
+    # Compile with Adam optimizer and custom learning rate
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(
+            learning_rate=0.001,
+            clipnorm=1.0  # Gradient clipping
+        ),
         loss='mse',
-        metrics=['mae', 'mse']
+        metrics=['mae', 'mse', keras.metrics.RootMeanSquaredError(name='rmse')]
     )
     
     return model
