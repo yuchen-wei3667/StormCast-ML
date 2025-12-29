@@ -1,0 +1,14 @@
+MODEL COMPARISON RESULTS
+================================================================================
+
+Model                     MAE     RMSE    Samples     Time/Sample
+--------------------------------------------------------------------------------
+GBR (XGBoost)            6.50     8.92      99200       0.0023 ms
+GRU (Temporal)           5.61     7.85      60030       0.2619 ms
+Baseline (5-scan avg)     7.97    10.52      69356       0.1676 ms
+
+
+IMPROVEMENTS OVER BASELINE
+--------------------------------------------------------------------------------
+GBR (XGBoost)          18.4% better
+GRU (Temporal)         29.6% better
