@@ -1,42 +1,63 @@
-# LSTM Model (To Be Implemented)
+# GRU Model for Storm Motion Prediction
 
-This directory will contain the LSTM-based storm motion prediction model.
+This directory contains the GRU (Gated Recurrent Unit) based storm motion prediction model, optimized for CPU inference.
 
-## Planned Features
+## Features
 
 ### Architecture
-- **Input**: Sequence of last N scans (e.g., 5-10 scans)
-- **LSTM layers**: 2-3 layers with 64-128 units each
-- **Output**: Multi-step predictions (next 1-5 scans)
+- **Input**: Sequences of 5 scans (configurable)
+- **Features**: 44 per timestep
+  - 31 environmental (CAPE, shear, wind, radar, probabilities)
+  - 3 motion (dx, dy, dt)
+  - 4 engineered (velocity mag/dir, interactions)
+  - 6 bounding box (x_min, y_min, x_max, y_max, area, aspect_ratio)
+- **GRU layers**: 2 layers (64 + 32 units)
+- **Dropout**: 0.3 for regularization
+- **Output**: (u, v) velocity prediction
 
-### Expected Benefits
-- **Temporal learning**: Captures storm acceleration and turning patterns
-- **Better erratic storm prediction**: Expected 15-25% improvement over GBR
-- **Multi-step forecasting**: Predict 5, 10, 15 minutes ahead
-- **Expected MAE**: 4.5-5.5 m/s (vs current 6.39 m/s)
+### Training Features
+- ✅ Early stopping (patience=15)
+- ✅ Learning rate reduction (patience=5)
+- ✅ Verbose train/val loss monitoring
+- ✅ Model checkpointing (saves best model)
+- ✅ CSV logging of training history
 
-## Implementation Plan
+### Expected Performance
+- **Target MAE**: 4.5-5.5 m/s (vs GBR: 6.39 m/s)
+- **Improvement**: 15-30% over baseline
+- **Better on erratic storms**: Captures temporal patterns
 
-1. **Data preparation**
-   - Restructure data into sequences (storm tracks)
-   - Handle variable-length sequences
-   - Create multi-step targets
+## Files
 
-2. **Model architecture**
-   - LSTM encoder for temporal features
-   - Dense decoder for predictions
-   - Dropout for regularization
+- **`gru_data_loader.py`**: Sequence data loading with bounding box
+- **`gru_model.py`**: GRU architecture and callbacks
+- **`train_gru.py`**: Training script
 
-3. **Training**
-   - GPU acceleration (CUDA)
-   - Learning rate scheduling
-   - Early stopping on validation loss
+## Usage
 
-4. **Evaluation**
-   - Compare against GBR baseline
-   - Analyze performance by forecast horizon
-   - Test on erratic vs smooth storms
+### Install TensorFlow
+```bash
+conda install tensorflow
+```
+
+### Train Model
+```bash
+python src/model/lstm/train_gru.py \
+  --data_dir /path/to/data \
+  --output_dir models \
+  --sequence_length 5 \
+  --batch_size 64 \
+  --epochs 100
+```
+
+### Monitor Training
+The script will print train/val loss every epoch:
+```
+Epoch 1: loss=450.23, val_loss=425.67, mae=15.32, val_mae=14.89
+Epoch 2: loss=380.45, val_loss=395.12, mae=13.21, val_mae=13.45
+...
+```
 
 ## Status
 
-🚧 **Not yet implemented** - GBR model serves as baseline
+✅ **Implemented** - Ready for training and evaluation
