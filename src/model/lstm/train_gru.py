@@ -4,7 +4,7 @@ import pickle
 import logging
 import numpy as np
 import tensorflow as tf
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import train_test_split
 
 # Local imports
@@ -45,14 +45,16 @@ class MetricLogger(tf.keras.callbacks.Callback):
                      f"Val Velocity MAE: {logs.get('val_mae'):.4f}, "
                      f"Val Directional MAE: {logs.get('val_directional_error_deg'):.4f}")
 
-def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras", sequence_length=4, residual=False, loss_type='combined'):
+def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras", 
+              sequence_length=8, residual=False, loss_type='combined', 
+              input_deltas=False, robust_scaling=False):
     """
-    Main training pipeline for StormCast GRU (v5).
+    Main training pipeline for StormCast GRU (v6).
     """
-    logging.info(f"Loading data from {data_dir} with sequence_length={sequence_length}, residual={residual}...")
+    logging.info(f"Loading data from {data_dir} with sequence_length={sequence_length}, residual={residual}, deltas={input_deltas}...")
     
     # 1. Load Data
-    X, y, ids = load_sequences(data_dir, sequence_length=sequence_length, residual=residual)
+    X, y, ids = load_sequences(data_dir, sequence_length=sequence_length, residual=residual, input_deltas=input_deltas)
     
     if len(X) == 0:
         logging.error("No valid data found. Exiting.")
@@ -72,8 +74,8 @@ def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras"
     n_samples, seq_len, n_features = X.shape
     X_2d = X.reshape(n_samples * seq_len, n_features)
     
-    logging.info("Normalizing features...")
-    scaler_x = StandardScaler()
+    logging.info(f"Normalizing features ({'RobustScaler' if robust_scaling else 'StandardScaler'})...")
+    scaler_x = RobustScaler() if robust_scaling else StandardScaler()
     X_scaled_2d = scaler_x.fit_transform(X_2d)
     X_scaled = X_scaled_2d.reshape(n_samples, seq_len, n_features)
     
@@ -85,7 +87,7 @@ def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras"
     X_train, X_val, y_train, y_val_scaled = train_test_split(X_scaled, y_scaled, test_size=0.15, random_state=42)
     
     # 4. Initialize Model
-    logging.info(f"Initializing GRU Model (v5 architecture, loss={loss_type})...")
+    logging.info(f"Initializing GRU Model (loss={loss_type})...")
     model = create_gru_model(input_shape=(seq_len, n_features), gru_units=[128, 64], loss=loss_type)
     model.summary(print_fn=logging.info)
     
@@ -133,7 +135,8 @@ def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras"
         X_val_unscaled_2d = scaler_x.inverse_transform(X_val_2d)
         X_val_unscaled = X_val_unscaled_2d.reshape(-1, seq_len, n_features)
         
-        # u, v are features at index 46, 47 (eng features 2, 3)
+        # u, v are at index 46, 47 (eng features 2, 3) in the base 50 features
+        # If input_deltas is True, they are still at 46, 47 (first half)
         u_idx, v_idx = 46, 47
         curr_u = X_val_unscaled[:, -1, u_idx]
         curr_v = X_val_unscaled[:, -1, v_idx]
@@ -172,7 +175,11 @@ if __name__ == "__main__":
     parser.add_argument("--sequence_length", type=int, default=8, help="Features lookback sequence length")
     parser.add_argument("--residual", action="store_true", help="Predict velocity change (residual)")
     parser.add_argument("--loss_type", default="combined", choices=["combined", "mse"], help="Loss function")
+    parser.add_argument("--input_deltas", action="store_true", help="Include environmental deltas as input")
+    parser.add_argument("--robust_scaling", action="store_true", help="Use RobustScaler for inputs")
     
     args = parser.parse_args()
     
-    train_gru(args.data_dir, args.model_dir, args.model_name, args.sequence_length, args.residual, args.loss_type)
+    train_gru(args.data_dir, args.model_dir, args.model_name, 
+              args.sequence_length, args.residual, args.loss_type,
+              args.input_deltas, args.robust_scaling)

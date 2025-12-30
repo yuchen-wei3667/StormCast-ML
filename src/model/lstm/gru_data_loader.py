@@ -123,10 +123,17 @@ def _extract_engineered_features(entry):
     # Return u, v as well to make identity learning easier
     return [cape_shear, vil_precip, u, v, velocity_mag, velocity_dir]
 
-def load_sequences(base_path, sequence_length=1, features_to_extract=None, residual=False):
+def load_sequences(base_path, sequence_length=1, features_to_extract=None, residual=False, input_deltas=False):
     """
     Load storm data sequences from the specified base path.
     Structure: base_path/{date}/cells/*.json
+    
+    Args:
+        base_path (str): Path to root directory with date folders.
+        sequence_length (int): Number of history time steps to include.
+        features_to_extract (list): Optional list of features to extract.
+        residual (bool): If True, target is velocity change, else absolute velocity.
+        input_deltas (bool): If True, include change in environmental features as input.
     """
     if features_to_extract is None:
         features_to_extract = DEFAULT_FEATURES
@@ -198,10 +205,24 @@ def load_sequences(base_path, sequence_length=1, features_to_extract=None, resid
             if geom is None:
                 track_processed_features.append(None)
                 continue
-                
+              # D. Engineered
             eng = _extract_engineered_features(entry)
             
+            # Combine
             step_features = props + spatial + geom + eng
+            
+            if input_deltas:
+                # Add deltas if possible, else 0
+                if len(track_processed_features) > 0 and track_processed_features[-1] is not None:
+                    prev_feat = track_processed_features[-1]
+                    # We only want deltas for the environmental/engineered features
+                    # props (35) + spatial (3) + geom (6) + eng (6)
+                    # Let's just do deltas for all features except the last few engineered ones if they are angles
+                    delta = [curr - prev for curr, prev in zip(step_features, prev_feat)]
+                    step_features = step_features + delta
+                else:
+                    step_features = step_features + [0.0] * len(step_features)
+            
             track_processed_features.append(step_features)
             
         # 2. Create Sequences
