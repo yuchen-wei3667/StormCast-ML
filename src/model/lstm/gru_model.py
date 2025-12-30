@@ -44,20 +44,16 @@ def directional_error_deg(y_true, y_pred):
 
 def combined_loss(y_true, y_pred):
     """
-    Combined optimization objective:
-    1. Velocity-Aware Huber Loss (Magnitude/Component accuracy)
-    2. Directional Cosine Loss (Angle accuracy)
-    
-    Weights are tuned to balance MAE (< 5.5 m/s) and DirMAE (< 40 deg).
+    Combines Velocity-Aware Huber Loss and Directional Cosine Loss.
     """
-    # 1. Component Loss (Huber)
+    # 1. Velocity Magnitude Loss (Huber)
     v_loss = velocity_aware_huber_loss(y_true, y_pred, velocity_weight=0.05)
     
-    # 2. Directional Loss (Cosine Similarity)
+    # 2. Directional Loss (1 - Cosine Similarity)
+    # y = [u, v]
     u_true, v_true = y_true[:, 0], y_true[:, 1]
     u_pred, v_pred = y_pred[:, 0], y_pred[:, 1]
     
-    # Normalize vectors (add epsilon to avoid div-by-zero)
     norm_true = tf.sqrt(tf.square(u_true) + tf.square(v_true)) + 1e-7
     norm_pred = tf.sqrt(tf.square(u_pred) + tf.square(v_pred)) + 1e-7
     
@@ -66,63 +62,99 @@ def combined_loss(y_true, y_pred):
     u_pred_n = u_pred / norm_pred
     v_pred_n = v_pred / norm_pred
     
-    # Cosine distance: 1 - cos(theta)
-    # Range: [0, 2], where 0 is perfect alignment
     cos_sim = u_true_n * u_pred_n + v_true_n * v_pred_n
-    dir_loss = tf.reduce_mean(1.0 - cos_sim)
+    dir_loss = 1.0 - cos_sim
+    dir_loss = tf.reduce_mean(dir_loss)
     
-    # Total Loss
-    # Directional loss is weighted heavily (x10) to force alignment focus
-    return v_loss + 10.0 * dir_loss
+    # Weight directional loss lower to prioritize velocity magnitude accuracy in v4
+    return v_loss + 2.0 * dir_loss
 
 class StormCastGRU(tf.keras.Model):
     """
-    Custom GRU model for Storm Motion prediction.
-    Architecture: GRU -> Dense(96) -> Dense(48) -> Output(2)
+    Custom GRU model for Storm Motion prediction (v5 Architecture).
+    Focus: Regularization to prevent overfitting on noisy meteorological data.
     """
-    def __init__(self, gru_units=64, dense_units=[96, 48], **kwargs):
+    def __init__(self, gru_units=[128, 64], dense_units=[256, 128, 64], dropout_rate=0.4, l2_reg=1e-4, **kwargs):
         super(StormCastGRU, self).__init__(**kwargs)
         self.gru_units = gru_units
         self.dense_units = dense_units
+        self.dropout_rate = dropout_rate
+        self.l2_reg = l2_reg
         
-        # Layers
-        self.gru = tf.keras.layers.GRU(gru_units, return_sequences=False, name="gru_layer")
-        self.dense1 = tf.keras.layers.Dense(dense_units[0], activation='relu', name="dense_1")
-        self.dense2 = tf.keras.layers.Dense(dense_units[1], activation='relu', name="dense_2")
+        reg = tf.keras.regularizers.l2(l2_reg)
+        
+        # Stacked GRU Layers
+        self.gru_layers = []
+        self.bn_gru_layers = []
+        
+        for i, units in enumerate(gru_units):
+            ret_seq = (i < len(gru_units) - 1)
+            self.gru_layers.append(tf.keras.layers.GRU(
+                units, return_sequences=ret_seq, name=f"gru_{i}",
+                kernel_regularizer=reg, recurrent_regularizer=reg
+            ))
+            self.bn_gru_layers.append(tf.keras.layers.BatchNormalization(name=f"bn_gru_{i}"))
+        
+        # Dense Blocks
+        self.dense_layers = []
+        self.bn_layers = []
+        self.dropout_layers = []
+        
+        for i, units in enumerate(dense_units):
+            self.dense_layers.append(tf.keras.layers.Dense(
+                units, activation='elu', name=f"dense_{i}",
+                kernel_regularizer=reg
+            ))
+            self.bn_layers.append(tf.keras.layers.BatchNormalization(name=f"bn_{i}"))
+            self.dropout_layers.append(tf.keras.layers.Dropout(dropout_rate, name=f"dropout_{i}"))
+            
         self.out = tf.keras.layers.Dense(2, name="output_velocity")
         
-    def call(self, inputs):
-        x = self.gru(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
+    def call(self, inputs, training=False):
+        x = inputs
+        for gru, bn in zip(self.gru_layers, self.bn_gru_layers):
+            x = gru(x)
+            x = bn(x, training=training)
+        
+        for dense, bn, dropout in zip(self.dense_layers, self.bn_layers, self.dropout_layers):
+            x = dense(x)
+            x = bn(x, training=training)
+            x = dropout(x, training=training)
+            
         return self.out(x)
         
     def get_config(self):
         config = super(StormCastGRU, self).get_config()
         config.update({
             "gru_units": self.gru_units,
-            "dense_units": self.dense_units
+            "dense_units": self.dense_units,
+            "dropout_rate": self.dropout_rate,
+            "l2_reg": self.l2_reg
         })
         return config
     
-    def compile_model(self, learning_rate=0.001):
-        """Helper to compile with the custom combined loss."""
+    def compile_model(self, learning_rate=0.001, loss='combined'):
+        """Helper to compile with custom or standard loss."""
+        if loss == 'combined':
+            loss_fn = combined_loss
+        else:
+            loss_fn = 'mse'
+            
         self.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            loss=combined_loss,
+            loss=loss_fn,
             metrics=['mae', directional_error_deg]
         )
 
-def create_gru_model(input_shape, gru_units=64):
+def create_gru_model(input_shape, gru_units=[128, 64], loss='combined'):
     """
     Factory function to instantiate and build the StormCastGRU model.
     """
     model = StormCastGRU(gru_units=gru_units)
     
-    # Build by passing a dummy input (standard for subclassed models to initialize weights)
-    # Input shape is (seq_len, features) -> adds batch dim: (1, seq_len, features)
+    # Build
     dummy_x = tf.zeros((1, *input_shape))
     _ = model(dummy_x)
     
-    model.compile_model()
+    model.compile_model(loss=loss)
     return model

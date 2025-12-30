@@ -6,6 +6,7 @@ import argparse
 import os
 import pickle
 import numpy as np
+import time
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 import sys
@@ -16,7 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model', 'lstm'))
 
 from data_loader import load_storm_data
 from gru_data_loader import load_sequences
-from gru_model import velocity_aware_huber_loss, directional_error_deg, StormCastGRU
+from gru_model import velocity_aware_huber_loss, directional_error_deg, StormCastGRU, combined_loss
 
 def load_gbr_model(model_dir):
     """Load GBR model and scaler"""
@@ -32,14 +33,20 @@ def load_gru_model(model_dir, filename="gru_storm_motion.keras"):
     custom_objects = {
         "velocity_aware_huber_loss": velocity_aware_huber_loss,
         "directional_error_deg": directional_error_deg,
-        "StormCastGRU": StormCastGRU
+        "StormCastGRU": StormCastGRU,
+        "combined_loss": combined_loss
     }
     model = tf.keras.models.load_model(os.path.join(model_dir, filename), custom_objects=custom_objects)
     
     scaler_filename = filename.replace('.keras', '_scaler.pkl')
     with open(os.path.join(model_dir, scaler_filename), 'rb') as f:
-        scaler = pickle.load(f)
-    return model, scaler
+        scaler_data = pickle.load(f)
+    
+    # Handle legacy vs new dictionary scaler format
+    if isinstance(scaler_data, dict):
+        return model, scaler_data
+    else:
+        return model, {'x': scaler_data, 'y': None}
 
 def compute_baseline_predictions(data_dir, n_history=5, max_velocity=31):
     """Compute baseline predictions using simple extrapolation"""
@@ -161,7 +168,7 @@ def evaluate_model(y_true, y_pred, model_name):
         'n_samples': len(y_true)
     }
 
-def compare_all_models(data_dir, model_dir, output_dir="results"):
+def compare_all_models(data_dir, model_dir, output_dir="results", filename="gru_storm_motion.keras", sequence_length=4, residual=False):
     """Compare all three models"""
     print("="*80)
     print("MODEL COMPARISON: GBR vs GRU vs BASELINE")
@@ -169,38 +176,88 @@ def compare_all_models(data_dir, model_dir, output_dir="results"):
     
     # Load models
     print("\nLoading models...")
-    gbr_model, gbr_scaler = load_gbr_model(model_dir)
-    gru_model, gru_scaler = load_gru_model(model_dir)
+    gbr_model, gbr_scaler = None, None
+    try:
+        gbr_model, gbr_scaler = load_gbr_model(model_dir)
+        print("GBR model loaded successfully.")
+    except Exception as e:
+        print(f"GBR model could not be loaded: {e}. Skipping GBR comparison.")
     
-    # Load data for GBR
-    print("\nLoading GBR validation data...")
-    X_gbr, y_gbr = load_storm_data(data_dir)
-    X_gbr_scaled = gbr_scaler.transform(X_gbr)
+    gru_model, gru_scaler = load_gru_model(model_dir, filename=filename)
+    print("GRU model loaded successfully.")
     
-    # Filter for sanity check
-    mag_gbr = np.sqrt(y_gbr[:, 0]**2 + y_gbr[:, 1]**2)
-    valid_mask_gbr = mag_gbr <= 31
-    X_gbr_scaled = X_gbr_scaled[valid_mask_gbr]
-    y_gbr = y_gbr[valid_mask_gbr]
+    # Load data for GBR if model exists
+    if gbr_model:
+        print("\nLoading GBR validation data...")
+        X_gbr, y_gbr = load_storm_data(data_dir)
+        X_gbr_scaled = gbr_scaler.transform(X_gbr)
+        
+        # Filter for sanity check
+        mag_gbr = np.sqrt(y_gbr[:, 0]**2 + y_gbr[:, 1]**2)
+        valid_mask_gbr = mag_gbr <= 31
+        X_gbr_scaled = X_gbr_scaled[valid_mask_gbr]
+        y_gbr = y_gbr[valid_mask_gbr]
+        
+        # Predict GBR with timing
+        print("Running GBR predictions...")
+        start_time = time.time()
+        y_gbr_pred = gbr_model.predict(X_gbr_scaled)
+        gbr_time = time.time() - start_time
+        gbr_time_per_sample = gbr_time / len(X_gbr_scaled) * 1000  # ms
+    else:
+        y_gbr_pred = None
+        gbr_time_per_sample = 0
     
-    # Predict GBR with timing
-    print("Running GBR predictions...")
-    import time
-    start_time = time.time()
-    y_gbr_pred = gbr_model.predict(X_gbr_scaled)
-    gbr_time = time.time() - start_time
-    gbr_time_per_sample = gbr_time / len(X_gbr_scaled) * 1000  # ms
+    # Load data for GRU
+    print(f"\nLoading GRU validation data (seq_len={sequence_length}, residual={residual})...")
+    X_gru_raw, y_gru_true, _ = load_sequences(data_dir, sequence_length=sequence_length, residual=residual)
     
-    # Load data for GRU (use sequence_length=7 to match trained model)
-    print("\nLoading GRU validation data...")
-    X_gru, y_gru, _ = load_sequences(data_dir, sequence_length=7, max_velocity=31)
+    # Filter extreme outliers matching training
+    v_mags = np.sqrt(y_gru_true[:, 0]**2 + y_gru_true[:, 1]**2)
+    threshold = 40.0 if residual else 80.0
+    valid_mask = v_mags < threshold
+    X_gru_raw = X_gru_raw[valid_mask]
+    y_gru_true = y_gru_true[valid_mask]
+    print(f"Filtered {np.sum(~valid_mask)} extreme velocity outliers. Remaining samples: {len(X_gru_raw)}")
+    
+    # Scale GRU inputs
+    n_samples, seq_len, n_features = X_gru_raw.shape
+    X_gru_2d = X_gru_raw.reshape(n_samples * seq_len, n_features)
+    X_gru_scaled_2d = gru_scaler['x'].transform(X_gru_2d)
+    X_gru_scaled = X_gru_scaled_2d.reshape(n_samples, seq_len, n_features)
     
     # Predict GRU with timing
     print("Running GRU predictions...")
     start_time = time.time()
-    y_gru_pred = gru_model.predict(X_gru, verbose=0)
+    y_gru_pred_scaled = gru_model.predict(X_gru_scaled, verbose=0)
+    
+    # Handle output scaling
+    if gru_scaler['y'] is not None:
+        y_gru_pred = gru_scaler['y'].inverse_transform(y_gru_pred_scaled)
+    else:
+        y_gru_pred = y_gru_pred_scaled
+    
+    # Reconstruct absolute velocity if predicted residuals
+    if residual:
+        # u, v are at index 46, 47 (props 35 + spatial 3 + geom 6 + interaction 2)
+        # Verify: DEFAULT_FEATURES (35) + dx,dy,dt (3) + geom (6) + interaction (2) -> u is at 46
+        u_idx, v_idx = 46, 47
+        curr_u = X_gru_raw[:, -1, u_idx]
+        curr_v = X_gru_raw[:, -1, v_idx]
+        
+        y_gru_true_abs = np.zeros_like(y_gru_true)
+        y_gru_true_abs[:, 0] = y_gru_true[:, 0] + curr_u
+        y_gru_true_abs[:, 1] = y_gru_true[:, 1] + curr_v
+        
+        y_gru_pred_abs = np.zeros_like(y_gru_pred)
+        y_gru_pred_abs[:, 0] = y_gru_pred[:, 0] + curr_u
+        y_gru_pred_abs[:, 1] = y_gru_pred[:, 1] + curr_v
+        
+        y_gru_true = y_gru_true_abs
+        y_gru_pred = y_gru_pred_abs
+        
     gru_time = time.time() - start_time
-    gru_time_per_sample = gru_time / len(X_gru) * 1000  # ms
+    gru_time_per_sample = gru_time / len(X_gru_raw) * 1000  # ms
     
     # Compute baseline with timing
     print("\nComputing baseline predictions...")
@@ -214,15 +271,24 @@ def compare_all_models(data_dir, model_dir, output_dir="results"):
     print("RESULTS")
     print("="*80)
     
-    results = []
-    results.append(evaluate_model(y_gbr, y_gbr_pred, "GBR (XGBoost)"))
-    results.append(evaluate_model(y_gru, y_gru_pred, "GRU (Temporal)"))
-    results.append(evaluate_model(y_baseline_true, y_baseline_pred, "Baseline (5-scan avg)"))
+    # Evaluate all models
+    print("\n" + "="*80)
+    print("RESULTS")
+    print("="*80)
     
-    # Add timing info
-    results[0]['time_ms'] = gbr_time_per_sample
-    results[1]['time_ms'] = gru_time_per_sample
-    results[2]['time_ms'] = baseline_time_per_sample
+    results = []
+    if y_gbr_pred is not None:
+        gbr_res = evaluate_model(y_gbr, y_gbr_pred, "GBR (XGBoost)")
+        gbr_res['time_ms'] = gbr_time_per_sample
+        results.append(gbr_res)
+        
+    gru_res = evaluate_model(y_gru_true, y_gru_pred, "GRU (Temporal)")
+    gru_res['time_ms'] = gru_time_per_sample
+    results.append(gru_res)
+    
+    baseline_res = evaluate_model(y_baseline_true, y_baseline_pred, "Baseline (5-scan avg)")
+    baseline_res['time_ms'] = baseline_time_per_sample
+    results.append(baseline_res)
     
     # Print comparison table
     print(f"\n{'Model':<20} {'Samples':<10} {'MAE':>8} {'RMSE':>8} {'U-MAE':>8} {'V-MAE':>8} {'Dir-MAE':>10}")
@@ -246,8 +312,8 @@ def compare_all_models(data_dir, model_dir, output_dir="results"):
     print("\n" + "="*80)
     print("IMPROVEMENTS OVER BASELINE")
     print("="*80)
-    baseline_mae = results[2]['mae']
-    for r in results[:2]:
+    baseline_mae = results[-1]['mae']
+    for r in results[:-1]:
         improvement = (baseline_mae - r['mae']) / baseline_mae * 100
         print(f"{r['name']:<20} {improvement:>6.1f}% better")
     
@@ -265,8 +331,7 @@ def compare_all_models(data_dir, model_dir, output_dir="results"):
         
         f.write("\n\nIMPROVEMENTS OVER BASELINE\n")
         f.write("-"*80 + "\n")
-        baseline_mae = results[2]['mae']
-        for r in results[:2]:
+        for r in results[:-1]:
             improvement = (baseline_mae - r['mae']) / baseline_mae * 100
             f.write(f"{r['name']:<20} {improvement:>6.1f}% better\n")
     
@@ -317,7 +382,10 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", required=True, help="Path to validation data")
     parser.add_argument("--model_dir", default="models", help="Directory with trained models")
     parser.add_argument("--output_dir", default="results", help="Output directory")
+    parser.add_argument("--filename", default="gru_storm_motion.keras", help="GRU model filename")
+    parser.add_argument("--sequence_length", type=int, default=8, help="Sequence length used for GRU model")
+    parser.add_argument("--residual", action="store_true", help="Whether the GRU model predicts residuals")
     
     args = parser.parse_args()
     
-    compare_all_models(args.data_dir, args.model_dir, args.output_dir)
+    compare_all_models(args.data_dir, args.model_dir, args.output_dir, args.filename, args.sequence_length, args.residual)
