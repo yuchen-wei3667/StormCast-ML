@@ -47,14 +47,16 @@ class MetricLogger(tf.keras.callbacks.Callback):
 
 def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras", 
               sequence_length=8, residual=False, loss_type='combined', 
-              input_deltas=False, robust_scaling=False):
+              input_deltas=False, robust_scaling=False, use_core_features=False):
     """
-    Main training pipeline for StormCast GRU (v6).
+    Main training pipeline for StormCast GRU (v7).
     """
-    logging.info(f"Loading data from {data_dir} with sequence_length={sequence_length}, residual={residual}, deltas={input_deltas}...")
+    logging.info(f"Loading data from {data_dir} with sequence_length={sequence_length}, residual={residual}, deltas={input_deltas}, core={use_core_features}...")
     
     # 1. Load Data
-    X, y, ids = load_sequences(data_dir, sequence_length=sequence_length, residual=residual, input_deltas=input_deltas)
+    features = CORE_FEATURES if use_core_features else None
+    X, y, ids = load_sequences(data_dir, sequence_length=sequence_length, residual=residual, 
+                               input_deltas=input_deltas, features_to_extract=features)
     
     if len(X) == 0:
         logging.error("No valid data found. Exiting.")
@@ -109,7 +111,7 @@ def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras"
         X_train, y_train,
         validation_data=(X_val, y_val_scaled),
         epochs=150,
-        batch_size=128,
+        batch_size=256,
         callbacks=callbacks,
         verbose=1
     )
@@ -135,9 +137,15 @@ def train_gru(data_dir, output_dir="models", model_name="gru_storm_motion.keras"
         X_val_unscaled_2d = scaler_x.inverse_transform(X_val_2d)
         X_val_unscaled = X_val_unscaled_2d.reshape(-1, seq_len, n_features)
         
-        # u, v are at index 46, 47 (eng features 2, 3) in the base 50 features
-        # If input_deltas is True, they are still at 46, 47 (first half)
-        u_idx, v_idx = 46, 47
+        # In Engineered features: [cape_shear, vil_precip, u, v, mag, dir]
+        # u is at index -4, v is at index -3 relative to Step Features (half of total features if input_deltas=True)
+        # Actually in load_sequences, it's: step_features = props + spatial + geom + eng
+        # If input_deltas=True: step_features = (props+spatial+geom+eng) + delta(props+spatial+geom+eng)
+        
+        base_feature_count = n_features // 2 if input_deltas else n_features
+        u_idx = base_feature_count - 4
+        v_idx = base_feature_count - 3
+        
         curr_u = X_val_unscaled[:, -1, u_idx]
         curr_v = X_val_unscaled[:, -1, v_idx]
         
@@ -177,9 +185,10 @@ if __name__ == "__main__":
     parser.add_argument("--loss_type", default="combined", choices=["combined", "mse"], help="Loss function")
     parser.add_argument("--input_deltas", action="store_true", help="Include environmental deltas as input")
     parser.add_argument("--robust_scaling", action="store_true", help="Use RobustScaler for inputs")
+    parser.add_argument("--use_core_features", action="store_true", help="Use only pruned CORE_FEATURES")
     
     args = parser.parse_args()
     
     train_gru(args.data_dir, args.model_dir, args.model_name, 
               args.sequence_length, args.residual, args.loss_type,
-              args.input_deltas, args.robust_scaling)
+              args.input_deltas, args.robust_scaling, args.use_core_features)
