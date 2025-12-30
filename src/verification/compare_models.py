@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'model', 'lstm'))
 
 from data_loader import load_storm_data
 from gru_data_loader import load_sequences
-from gru_model import velocity_aware_huber_loss, directional_error_deg
+from gru_model import velocity_aware_huber_loss, directional_error_deg, StormCastGRU
 
 def load_gbr_model(model_dir):
     """Load GBR model and scaler"""
@@ -31,7 +31,8 @@ def load_gru_model(model_dir, filename="gru_storm_motion.keras"):
     import tensorflow as tf
     custom_objects = {
         "velocity_aware_huber_loss": velocity_aware_huber_loss,
-        "directional_error_deg": directional_error_deg
+        "directional_error_deg": directional_error_deg,
+        "StormCastGRU": StormCastGRU
     }
     model = tf.keras.models.load_model(os.path.join(model_dir, filename), custom_objects=custom_objects)
     
